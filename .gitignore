@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target
+backend/target
+**/target
+
+# Environment files
+.env
+backend/.env
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Cargo metadata (optional)
+.cargo/
