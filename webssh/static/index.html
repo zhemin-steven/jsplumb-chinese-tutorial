@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebSSH Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0; background: #111; color: #ddd;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      display: flex; flex-direction: column; min-height: 100%;
+    }
+    .toolbar {
+      display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+      padding: .5rem; background: #1a1a1a; border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 2;
+    }
+    .toolbar strong { font-weight: 600; margin-right: .25rem; }
+    .toolbar input[type=url] {
+      flex: 1; min-width: 240px; background: #0f0f0f; color: #eee;
+      border: 1px solid #333; border-radius: 4px; padding: .35rem .5rem;
+    }
+    button {
+      background: #2a2a2a; color: #eee; border: 1px solid #3a3a3a; border-radius: 4px; padding: .35rem .6rem; cursor: pointer;
+    }
+    button.primary { background: #163a73; border-color: #2a5da7; }
+    button.danger { background: #6b1f1f; border-color: #8d2a2a; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button.toggle.active { background: #0a5e4d; border-color: #0f8b73; }
+    #term-wrapper { position: relative; flex: 1; min-height: 0; }
+    #terminal { position: absolute; inset: 0; }
+    .fullscreen { position: fixed !important; inset: 0 !important; z-index: 10; background: #000; }
+    .status { margin-left: auto; font-size: .85em; opacity: .8; }
+    .spacer { flex: 0 0 0.5rem; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fullscreen@0.7.0/lib/xterm-addon-fullscreen.min.js"></script>
+</head>
+<body>
+  <div class="toolbar">
+    <strong>WebSSH</strong>
+    <input id="wsUrl" type="url" placeholder="ws(s)://host/ws" />
+    <button id="connectBtn" class="primary">Connect</button>
+    <button id="disconnectBtn" class="danger" disabled>Disconnect</button>
+    <span class="spacer"></span>
+    <button id="fullscreenBtn" title="Toggle Fullscreen">Fullscreen</button>
+    <button id="copyBtn" title="Copy selection">Copy</button>
+    <button id="pasteBtn" title="Paste from clipboard">Paste</button>
+    <button id="ctrlBtn" class="toggle" title="Next key with Ctrl">Ctrl</button>
+    <button id="altBtn" class="toggle" title="Next key with Alt/Meta">Alt</button>
+    <button id="escBtn" title="ESC">Esc</button>
+    <button id="tabBtn" title="Tab">Tab</button>
+    <button id="sigintBtn" title="Send SIGINT">SIGINT</button>
+    <span id="status" class="status">Disconnected</span>
+  </div>
+  <div id="term-wrapper">
+    <div id="terminal"></div>
+  </div>
+  <script>
+  (function(){
+    const Term = window.Terminal;
+    const FitAddon = window.FitAddon?.FitAddon || window.fit?.FitAddon;
+    const WebLinksAddon = window.WebLinksAddon?.WebLinksAddon || window['xterm-addon-web-links']?.WebLinksAddon;
+    const FullscreenAddon = window.FullscreenAddon?.FullscreenAddon || window['xterm-addon-fullscreen']?.FullscreenAddon;
+
+    const termWrapper = document.getElementById('term-wrapper');
+    const termEl = document.getElementById('terminal');
+    const wsUrlInput = document.getElementById('wsUrl');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const pasteBtn = document.getElementById('pasteBtn');
+    const ctrlBtn = document.getElementById('ctrlBtn');
+    const altBtn = document.getElementById('altBtn');
+    const escBtn = document.getElementById('escBtn');
+    const tabBtn = document.getElementById('tabBtn');
+    const sigintBtn = document.getElementById('sigintBtn');
+    const statusEl = document.getElementById('status');
+
+    let ctrlNext = false;
+    let altNext = false;
+    let ws = null;
+
+    const term = new Term({
+      fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+      fontSize: 14,
+      cursorBlink: true,
+      theme: { background: '#000000' },
+      allowProposedApi: true,
+      convertEol: true
+    });
+
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    if (WebLinksAddon) term.loadAddon(new WebLinksAddon());
+    let fullscreenAddon = null;
+    if (FullscreenAddon) { fullscreenAddon = new FullscreenAddon(); term.loadAddon(fullscreenAddon); }
+
+    term.open(termEl);
+    term.focus();
+    term.options.bracketedPasteMode = true;
+
+    function defaultWsUrl() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const url = proto + '://' + location.host + '/ws';
+      return url;
+    }
+    wsUrlInput.value = defaultWsUrl();
+
+    function setStatus(text) { statusEl.textContent = text; }
+
+    function fitAndResize() {
+      try { fitAddon && fitAddon.fit(); } catch(e) {}
+      const cols = term.cols || 80;
+      const rows = term.rows || 24;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({ t: 'resize', cols, rows })); } catch(e) {}
+      }
+    }
+
+    window.addEventListener('resize', debounce(fitAndResize, 80));
+
+    function connect() {
+      if (ws) { try { ws.close(); } catch(_){} ws = null; }
+      const url = (wsUrlInput.value || '').trim() || defaultWsUrl();
+      setStatus('Connecting...');
+      ws = new WebSocket(url);
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = () => {
+        setStatus('Connected');
+        connectBtn.disabled = true;
+        disconnectBtn.disabled = false;
+        term.focus();
+        fitAndResize();
+      };
+      ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          const text = new TextDecoder().decode(ev.data);
+          term.write(text);
+          return;
+        }
+        if (typeof ev.data === 'string') {
+          const s = ev.data;
+          if (s.startsWith('{')) {
+            try {
+              const obj = JSON.parse(s);
+              if (obj && obj.t === 'data' && typeof obj.d === 'string') { term.write(obj.d); return; }
+              if (obj && obj.t === 'title' && typeof obj.title === 'string') { document.title = obj.title + ' · WebSSH'; return; }
+              if (obj && obj.t === 'echo' && typeof obj.d === 'string') { term.write(obj.d); return; }
+            } catch(e) { /* fallthrough */ }
+          }
+          term.write(s);
+        }
+      };
+      ws.onclose = () => {
+        setStatus('Disconnected');
+        connectBtn.disabled = false;
+        disconnectBtn.disabled = true;
+      };
+      ws.onerror = (e) => { setStatus('Error (see console)'); console.error('WS error', e); };
+    }
+
+    function disconnect() { if (ws) { try { ws.close(); } catch(e) {} ws = null; } }
+
+    const SEND_AS_JSON = true;
+    function sendInput(data) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (SEND_AS_JSON) ws.send(JSON.stringify({ t: 'data', d: data }));
+      else ws.send(data);
+    }
+
+    term.onData(data => {
+      if (ctrlNext || altNext) {
+        let out = '';
+        for (let i = 0; i < data.length; i++) {
+          const ch = data[i];
+          if (ctrlNext && i === 0) {
+            const code = ch.toUpperCase().charCodeAt(0);
+            if (code >= 64 && code <= 95) out += String.fromCharCode(code - 64);
+            else if (code >= 97 && code <= 122) out += String.fromCharCode(code - 96);
+            else if (ch === ' ') out += String.fromCharCode(0);
+            else out += ch;
+          } else out += ch;
+        }
+        if (altNext) out = '\x1b' + out;
+        ctrlNext = false; altNext = false;
+        ctrlBtn.classList.remove('active');
+        altBtn.classList.remove('active');
+        sendInput(out);
+      } else {
+        sendInput(data);
+      }
+    });
+
+    escBtn.addEventListener('click', () => sendInput('\x1b'));
+    tabBtn.addEventListener('click', () => sendInput('\t'));
+    ctrlBtn.addEventListener('click', () => {
+      ctrlNext = !ctrlNext; altNext = false;
+      ctrlBtn.classList.toggle('active', ctrlNext);
+      altBtn.classList.remove('active');
+    });
+    altBtn.addEventListener('click', () => {
+      altNext = !altNext; ctrlNext = false;
+      altBtn.classList.toggle('active', altNext);
+      ctrlBtn.classList.remove('active');
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      const sel = term.getSelection();
+      if (!sel) return;
+      try { await navigator.clipboard.writeText(sel); }
+      catch(e) { fallbackCopyTextToClipboard(sel); }
+    });
+    pasteBtn.addEventListener('click', async () => {
+      try { const text = await navigator.clipboard.readText(); term.paste(text); }
+      catch(e) { const text = prompt('Paste text here:'); if (text != null) term.paste(text); }
+    });
+    term.textarea?.addEventListener('paste', (e) => {
+      if (e.clipboardData) { e.preventDefault(); const text = e.clipboardData.getData('text'); term.paste(text); }
+    });
+
+    sigintBtn.addEventListener('click', () => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ t: 'signal', sig: 'INT' }));
+    });
+
+    function isFs() { return !!(document.fullscreenElement); }
+    function toggleFullscreen() {
+      const container = termWrapper;
+      if (!isFs()) {
+        if (container.requestFullscreen) { container.requestFullscreen().catch(()=>{}); }
+        else { container.classList.toggle('fullscreen'); }
+      } else {
+        if (document.exitFullscreen) { document.exitFullscreen().catch(()=>{}); }
+        else { container.classList.toggle('fullscreen'); }
+      }
+      setTimeout(() => { fitAndResize(); term.focus(); }, 10);
+    }
+    fullscreenBtn.addEventListener('click', toggleFullscreen);
+    document.addEventListener('fullscreenchange', () => { fitAndResize(); });
+
+    connectBtn.addEventListener('click', connect);
+    disconnectBtn.addEventListener('click', disconnect);
+
+    function fallbackCopyTextToClipboard(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy'); } catch(e) {}
+      document.body.removeChild(ta);
+    }
+    function debounce(fn, ms) { let t; return (...args) => { clearTimeout(t); t = setTimeout(()=>fn.apply(null,args), ms); }; }
+
+    requestAnimationFrame(fitAndResize);
+  })();
+  </script>
+</body>
+</html>
