@@ -27,3 +27,10 @@ out/
 .vscode/
 .idea/
 *.swp
+# Rust
+**/target/
+**/.cargo/
+
+# Node (if any future tooling is added)
+node_modules/
+
