@@ -1,0 +1,43 @@
+# Multi-stage build for the backend (axum + tokio)
+# Build stage
+FROM rust:1-bookworm AS builder
+WORKDIR /app
+
+# Create a new empty shell project so that dependencies are cached
+RUN USER=root cargo new --bin backend
+WORKDIR /app/backend
+
+# Copy manifests
+COPY backend/Cargo.toml ./Cargo.toml
+
+# Pre-fetch dependencies
+RUN cargo build --release || true
+
+# Now copy source
+COPY backend/src ./src
+
+# Build the actual binary
+RUN cargo build --release
+
+# Runtime stage (Debian slim with libssh2 runtime deps)
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+       libssh2-1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the binary from the builder
+COPY --from=builder /app/backend/target/release/backend /app/backend
+
+# Env & defaults
+ENV APP_HOST=0.0.0.0
+ENV APP_PORT=8080
+ENV APP_ALLOW_ORIGINS=*
+
+EXPOSE 8080
+
+CMD ["/app/backend"]
