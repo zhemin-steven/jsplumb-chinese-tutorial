@@ -1,0 +1,10 @@
+# Rust
+**/target/
+**/.cargo/
+
+# Node (if any future tooling is added)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

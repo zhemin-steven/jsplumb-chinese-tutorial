@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebSSH (stub)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.css" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, "Apple Color Emoji", "Segoe UI Emoji"; margin: 0; display: flex; flex-direction: column; min-height: 100vh; }
+    header { background: #0f172a; color: #fff; padding: 12px 16px; }
+    main { flex: 1; display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px; }
+    form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; align-content: start; }
+    form label { grid-column: span 2; font-weight: 600; margin-top: 6px; }
+    form input { padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    form button { grid-column: span 2; padding: 10px 12px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    #terminal { width: 100%; height: calc(100vh - 120px); background: #111827; border-radius: 8px; padding: 8px; box-sizing: border-box; }
+    .note { color: #64748b; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WebSSH</h1>
+  </header>
+  <main>
+    <section>
+      <form id="connect-form">
+        <label>Host</label>
+        <input type="text" id="host" placeholder="example.com" required />
+        <label>Port</label>
+        <input type="number" id="port" placeholder="22" value="22" />
+        <label>Username</label>
+        <input type="text" id="username" placeholder="root" />
+        <label>Password</label>
+        <input type="password" id="password" placeholder="••••••" />
+        <button type="submit">Connect</button>
+        <p class="note">This UI is a stub. It establishes a WebSocket to the server and echoes messages.</p>
+      </form>
+    </section>
+    <section>
+      <div id="terminal"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.8.0/lib/xterm-addon-web-links.min.js"></script>
+  <script src="/static/index.js"></script>
+</body>
+</html>
