@@ -1,0 +1,21 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Cargo files
+Cargo.lock
+
+# IDE/editor
+.vscode/
+.idea/
+*.iml
+.DS_Store
+
+# Logs
+*.log
+
+# Node (docsify demos)
+node_modules/
+
+# Misc
+.tmp/
